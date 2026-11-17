@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>待ち人数管理</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Hiragino Sans", "Hiragino Kaku Gothic ProN", sans-serif;
+    background: #f4f6f8;
+    color: #222;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  h2 { font-size: 30px; margin: 0 0 12px; }
+  .panel {
+    background: #fff;
+    border-radius: 20px;
+    padding: 20px 24px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  }
+
+  /* ===== 来場者向け表示（1画面に収める） ===== */
+  #display {
+    height: 100vh;
+    height: 100dvh;
+    padding: 20px 24px;
+    display: grid;
+    grid-template-columns: 45% 1fr;
+    gap: 20px;
+  }
+  .summary { display: flex; flex-direction: column; gap: 20px; min-height: 0; }
+  .summary .panel {
+    flex: 1;
+    display: flex; flex-direction: column; justify-content: center;
+  }
+  .summary .label { font-size: min(3.2vh, 30px); font-weight: bold; white-space: nowrap; }
+  .summary .value {
+    font-size: min(15vh, 150px); font-weight: bold; line-height: 1.1;
+    white-space: nowrap; text-align: right;
+  }
+  .summary .value small { font-size: 0.45em; margin: 0 0.1em; }
+  #total { color: #1565c0; }
+  #nextWait { color: #6a1b9a; }
+
+  .groups-panel { display: flex; flex-direction: column; min-height: 0; }
+  .groups-panel h2 { font-size: min(3.6vh, 36px); }
+  #groups {
+    flex: 1; min-height: 0;
+    display: grid; grid-template-rows: repeat(5, 1fr); gap: 10px;
+  }
+  #groups .empty {
+    grid-row: 1 / 6; align-self: center; text-align: center;
+    font-size: min(4vh, 40px); color: #999;
+  }
+  .group {
+    display: flex; align-items: center; gap: 16px;
+    padding: 0 18px; border-radius: 14px; background: #e8f5e9;
+    min-height: 0; overflow: hidden;
+  }
+  .group.short { background: #fff8e1; }
+  .group.first { outline: 4px solid #2e7d32; outline-offset: -4px; }
+  .group .head { display: flex; flex-direction: column; flex: none; min-width: 150px; }
+  .group .name { font-size: min(3.6vh, 34px); font-weight: bold; white-space: nowrap; }
+  .group .sum { font-size: min(2.8vh, 26px); font-weight: bold; color: #555; }
+  .group.short .sum { color: #e65100; }
+  .group .members { display: flex; gap: 8px; flex: 1; min-width: 0; }
+  .group .members span {
+    flex: 0 1 min(6.5vh, 62px); min-width: 30px; height: min(6.5vh, 62px);
+    display: flex; align-items: center; justify-content: center;
+    font-size: min(4vh, 38px); font-weight: bold;
+    border-radius: 12px; background: #1565c0; color: #fff;
+  }
+  .group .wait {
+    flex: none; text-align: right; white-space: nowrap;
+    background: #fff; border-radius: 12px; padding: 4px 14px;
+  }
+  .group .wait .w-label { display: block; font-size: min(2.4vh, 22px); font-weight: bold; color: #555; }
+  .group .wait .w-value { font-size: min(5.6vh, 54px); font-weight: bold; color: #6a1b9a; line-height: 1.1; }
+  .group .wait .w-value small { font-size: 0.55em; }
+  #others {
+    margin-top: 10px; text-align: center;
+    font-size: min(3.6vh, 34px); font-weight: bold; color: #444;
+    background: #eceff1; border-radius: 14px; padding: 6px 0;
+  }
+  #others[hidden] { display: none; }
+
+  /* ===== スタッフ操作エリア（スクロールして表示） ===== */
+  #staff {
+    padding: 24px;
+    border-top: 6px dashed #b0bec5;
+    display: flex; flex-direction: column; gap: 20px;
+  }
+  .staff-title { font-size: 26px; font-weight: bold; color: #607d8b; }
+  .buttons { display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px; }
+  .buttons button {
+    font-size: 56px; font-weight: bold; height: 120px;
+    border: none; border-radius: 18px; color: #fff; cursor: pointer;
+    touch-action: manipulation; transition: transform 0.05s, opacity 0.2s;
+  }
+  .buttons button:active { transform: scale(0.94); }
+  .buttons button:disabled { opacity: 0.3; }
+  .add button { background: #2e7d32; }
+  .remove button { background: #c62828; font-size: 40px; height: 84px; }
+
+  .guide-row { display: grid; grid-template-columns: 1fr auto; gap: 16px; }
+  .guide-row button {
+    font-size: 32px; font-weight: bold; color: #fff;
+    border: none; border-radius: 16px; height: 96px; padding: 0 32px;
+    cursor: pointer; touch-action: manipulation; transition: opacity 0.2s;
+  }
+  .guide-row button:active { transform: scale(0.97); }
+  .guide-row button:disabled { opacity: 0.3; }
+  #doneBtn { background: #ef6c00; }
+  #doneBtn small { font-size: 0.75em; font-weight: normal; margin-left: 12px; }
+  #undoBtn { background: #546e7a; }
+
+  #queue {
+    display: flex; flex-wrap: wrap; gap: 12px;
+    min-height: 84px; align-items: center;
+  }
+  #queue .item {
+    font-size: 44px; font-weight: bold; width: 76px; height: 76px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 14px; background: #1565c0; color: #fff;
+  }
+  #queue .empty { font-size: 30px; color: #999; }
+</style>
+</head>
+<body>
+
+  <!-- 来場者向け表示 -->
+  <section id="display">
+    <div class="summary">
+      <div class="panel">
+        <div class="label">現在お待ちの合計人数</div>
+        <div class="value" id="total">0<small>人</small></div>
+      </div>
+      <div class="panel">
+        <div class="label">次に並ぶ方の待ち時間の目安</div>
+        <div class="value" id="nextWait"><small>約</small>5<small>分</small></div>
+      </div>
+    </div>
+
+    <div class="panel groups-panel">
+      <h2>体験グループ</h2>
+      <div id="groups"></div>
+      <div id="others" hidden></div>
+    </div>
+  </section>
+
+  <!-- スタッフ操作エリア -->
+  <section id="staff">
+    <div class="staff-title">▼ スタッフ操作</div>
+
+    <div class="panel">
+      <h2>追加</h2>
+      <div class="buttons add" id="addButtons"></div>
+    </div>
+
+    <div class="panel">
+      <h2>消去</h2>
+      <div class="buttons remove" id="removeButtons"></div>
+    </div>
+
+    <div class="guide-row">
+      <button id="doneBtn" disabled>ご案内済み</button>
+      <button id="undoBtn" disabled>↶ 元に戻す</button>
+    </div>
+
+    <div class="panel">
+      <h2>現在お待ちのお客様グループ</h2>
+      <div id="queue"></div>
+    </div>
+  </section>
+
+<script>
+  const queue = [];
+
+  const addArea = document.getElementById('addButtons');
+  const removeArea = document.getElementById('removeButtons');
+  const queueArea = document.getElementById('queue');
+  const totalArea = document.getElementById('total');
+  const groupsArea = document.getElementById('groups');
+  const othersArea = document.getElementById('others');
+  const nextWaitArea = document.getElementById('nextWait');
+  const doneBtn = document.getElementById('doneBtn');
+  const undoBtn = document.getElementById('undoBtn');
+
+  // 「ご案内済み」の履歴（元に戻す用）。消去した数値とキュー上の位置を保存する
+  const guideHistory = [];
+  const removeButtons = [];
+
+  for (let n = 1; n <= 6; n++) {
+    const addBtn = document.createElement('button');
+    addBtn.textContent = n;
+    addBtn.addEventListener('click', () => {
+      queue.push(n);
+      render();
+    });
+    addArea.appendChild(addBtn);
+
+    const removeBtn = document.createElement('button');
+    removeBtn.textContent = n;
+    removeBtn.addEventListener('click', () => {
+      // キュー内で最も古い（先に入力された）該当値を1件消去
+      const idx = queue.indexOf(n);
+      if (idx !== -1) {
+        queue.splice(idx, 1);
+        render();
+      }
+    });
+    removeArea.appendChild(removeBtn);
+    removeButtons[n] = removeBtn;
+  }
+
+  const GROUP_SIZE = 6;
+  const MAX_DISPLAY_GROUPS = 5;       // 来場者向けに表示するグループ数の上限
+  const PLAY_SECONDS = 3 * 60 + 30;   // 体験時間 3分30秒
+  const INTERVAL_SECONDS = 45;        // インターバル 45秒
+  const CYCLE_SECONDS = PLAY_SECONDS + INTERVAL_SECONDS;  // 1グループあたり 4分15秒
+
+  // グループn（1始まり）の待ち時間 = (3分30秒 + 45秒) × n
+  function waitSeconds(groupNumber) {
+    return CYCLE_SECONDS * groupNumber;
+  }
+
+  // 秒は切り上げて分で表す（例: 4分15秒 → 5）
+  function toMinutes(totalSeconds) {
+    return Math.ceil(totalSeconds / 60);
+  }
+
+  // キューの先頭から順に、合計6人になるようにグループを作る
+  function makeGroups(values) {
+    const used = values.map(() => false);
+    const groups = [];
+    for (let i = 0; i < values.length; i++) {
+      if (used[i]) continue;
+      const members = [values[i]];
+      const indices = [i];   // キュー上の位置（ご案内済みで消去する際に使用）
+      let sum = values[i];
+      used[i] = true;
+      // 次の数値から順に参照し、合計が7以上になる数値は飛ばす
+      for (let j = i + 1; j < values.length && sum < GROUP_SIZE; j++) {
+        if (used[j]) continue;
+        if (sum + values[j] <= GROUP_SIZE) {
+          members.push(values[j]);
+          indices.push(j);
+          sum += values[j];
+          used[j] = true;
+        }
+      }
+      // 最後まで参照して6にならなければ、その合計（1〜5）で成立
+      groups.push({ members, indices, sum });
+    }
+    return groups;
+  }
+
+  let currentGroups = [];
+
+  // グループ1をご案内済みにする：グループ1に含まれる数値をキューから消去
+  function guideFirstGroup() {
+    const group = currentGroups[0];
+    if (!group) return;
+    const entries = group.indices
+      .map(i => ({ index: i, value: queue[i] }))
+      .sort((a, b) => a.index - b.index);
+    guideHistory.push(entries);
+
+    // 後ろの位置から消すことで、前の位置がずれないようにする
+    const sorted = [...group.indices].sort((a, b) => b - a);
+    for (const i of sorted) {
+      queue.splice(i, 1);
+    }
+    render();
+  }
+  doneBtn.addEventListener('click', guideFirstGroup);
+
+  // 直前の「ご案内済み」を取り消し、消去した数値を元の位置に戻す
+  function undoGuide() {
+    const entries = guideHistory.pop();
+    if (!entries) return;
+    // 前の位置から順に差し込むことで、元の並びを再現する
+    for (const e of entries) {
+      queue.splice(Math.min(e.index, queue.length), 0, e.value);
+    }
+    render();
+  }
+  undoBtn.addEventListener('click', undoGuide);
+
+  function renderGroups(groups) {
+    groupsArea.innerHTML = '';
+    if (groups.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'empty';
+      empty.textContent = '現在お待ちのグループはありません';
+      groupsArea.appendChild(empty);
+    }
+
+    groups.slice(0, MAX_DISPLAY_GROUPS).forEach((g, idx) => {
+      const row = document.createElement('div');
+      row.className = 'group'
+        + (g.sum < GROUP_SIZE ? ' short' : '')
+        + (idx === 0 ? ' first' : '');
+
+      const head = document.createElement('div');
+      head.className = 'head';
+      head.innerHTML =
+        `<span class="name">グループ${idx + 1}</span>` +
+        `<span class="sum">計 ${g.sum}人</span>`;
+
+      const members = document.createElement('div');
+      members.className = 'members';
+      for (const v of g.members) {
+        const m = document.createElement('span');
+        m.textContent = v;
+        members.appendChild(m);
+      }
+
+      const wait = document.createElement('div');
+      wait.className = 'wait';
+      wait.innerHTML =
+        `<span class="w-label">待ち時間</span>` +
+        `<span class="w-value"><small>約</small>${toMinutes(waitSeconds(idx + 1))}<small>分</small></span>`;
+
+      row.append(head, members, wait);
+      groupsArea.appendChild(row);
+    });
+
+    // 6グループ目以降は「他〇グループ」とまとめて表示
+    const rest = groups.length - MAX_DISPLAY_GROUPS;
+    othersArea.hidden = rest <= 0;
+    othersArea.textContent = rest > 0 ? `他 ${rest} グループ` : '';
+  }
+
+  function render() {
+    queueArea.innerHTML = '';
+    if (queue.length === 0) {
+      const empty = document.createElement('span');
+      empty.className = 'empty';
+      empty.textContent = '（なし）';
+      queueArea.appendChild(empty);
+    } else {
+      for (const v of queue) {
+        const item = document.createElement('div');
+        item.className = 'item';
+        item.textContent = v;
+        queueArea.appendChild(item);
+      }
+    }
+
+    const total = queue.reduce((sum, v) => sum + v, 0);
+    totalArea.innerHTML = `${total}<small>人</small>`;
+
+    // キューに存在しない数値の消去ボタンは無効化
+    for (let n = 1; n <= 6; n++) {
+      removeButtons[n].disabled = !queue.includes(n);
+    }
+
+    const groups = makeGroups(queue);
+    currentGroups = groups;
+
+    // ご案内済みボタン：グループ1の内訳を添えて表示
+    if (groups.length > 0) {
+      doneBtn.disabled = false;
+      doneBtn.innerHTML = `ご案内済み<small>（グループ1：${groups[0].members.join('・')}）</small>`;
+    } else {
+      doneBtn.disabled = true;
+      doneBtn.textContent = 'ご案内済み';
+    }
+    undoBtn.disabled = guideHistory.length === 0;
+
+    // 最後のグループの待ち時間 + (3分30秒 + 45秒)
+    // グループが無いときは 0 + 4分15秒
+    const lastWait = groups.length > 0 ? waitSeconds(groups.length) : 0;
+    nextWaitArea.innerHTML = `<small>約</small>${toMinutes(lastWait + CYCLE_SECONDS)}<small>分</small>`;
+
+    renderGroups(groups);
+  }
+
+  render();
+</script>
+</body>
+</html>
